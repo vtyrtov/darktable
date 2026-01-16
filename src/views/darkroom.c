@@ -951,6 +951,11 @@ static gboolean _dev_load_requested_image(gpointer user_data);
 static void _dev_change_image(dt_develop_t *dev,
                               const dt_imgid_t imgid)
 {
+  if(dt_check_gimpmode("file"))
+  {
+    dt_control_log(_("can't change image in GIMP plugin mode"));
+    return;
+  }
   // Pipe reset needed when changing image
   // FIXME: synch with dev_init() and dev_cleanup() instead of redoing it
 
@@ -1328,9 +1333,13 @@ static void _view_darkroom_filmstrip_activate_callback(gpointer instance,
   }
 }
 
-static void dt_dev_jump_image(dt_develop_t *dev, int diff, gboolean by_key)
+static void _dev_jump_image(dt_develop_t *dev, int diff, gboolean by_key)
 {
-
+  if(dt_check_gimpmode("file"))
+  {
+    dt_control_log(_("can't change image in GIMP plugin mode"));
+    return;
+  }
   const dt_imgid_t imgid = dev->requested_id;
   int new_offset = 1;
   dt_imgid_t new_id = NO_IMGID;
@@ -1419,12 +1428,12 @@ static void zoom_out_callback(dt_action_t *action)
 
 static void skip_f_key_accel_callback(dt_action_t *action)
 {
-  dt_dev_jump_image(dt_action_view(action)->data, 1, TRUE);
+  _dev_jump_image(dt_action_view(action)->data, 1, TRUE);
 }
 
 static void skip_b_key_accel_callback(dt_action_t *action)
 {
-  dt_dev_jump_image(dt_action_view(action)->data, -1, TRUE);
+  _dev_jump_image(dt_action_view(action)->data, -1, TRUE);
 }
 
 static void _darkroom_ui_pipe_finish_signal_callback(gpointer instance,
@@ -3339,8 +3348,8 @@ void mouse_moved(dt_view_t *self,
     // module requested a color box
     dt_colorpicker_sample_t *const sample = darktable.lib->proxy.colorpicker.primary_sample;
     // Make sure a minimal width/height
-    float delta_x = 1.0f / (float) dev->full.pipe->processed_width;
-    float delta_y = 1.0f / (float) dev->full.pipe->processed_height;
+    const float delta_x = 1.0f / (float) dev->full.pipe->processed_width;
+    const float delta_y = 1.0f / (float) dev->full.pipe->processed_height;
 
     _get_zoom_pos(&dev->full, x, y, &zoom_x, &zoom_y, &zoom_scale);
     dt_boundingbox_t pbox = { zoom_x, zoom_y };
@@ -3522,8 +3531,8 @@ int button_pressed(dt_view_t *self,
         dt_color_picker_transform_box(dev, 2, sample->box, sbox, TRUE);
 
         const float handle_px = 6.0f;
-        float hx = handle_px / (procw * zoom_scale);
-        float hy = handle_px / (proch * zoom_scale);
+        const float hx = handle_px / (procw * zoom_scale);
+        const float hy = handle_px / (proch * zoom_scale);
 
         const float dx0 = fabsf(zoom_x - sbox[0]);
         const float dx1 = fabsf(zoom_x - sbox[2]);

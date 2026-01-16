@@ -792,6 +792,7 @@ void init_presets(dt_iop_module_so_t *self)
   p.a[0] = -1.0f; // autodetect profile
   p.central_pixel_weight = 0.1f;
   p.overshooting = 1.0f;
+  p.compensate_hilite_pres = FALSE;
   p.fix_anscombe_and_nlmeans_norm = TRUE;
   for(int b = 0; b < DT_IOP_DENOISE_PROFILE_BANDS; b++)
   {
@@ -803,7 +804,7 @@ void init_presets(dt_iop_module_so_t *self)
     p.x[DT_DENOISE_PROFILE_Y0][b] = b / (DT_IOP_DENOISE_PROFILE_BANDS - 1.0f);
     p.y[DT_DENOISE_PROFILE_Y0][b] = 0.0f;
   }
-  dt_gui_presets_add_generic(_("wavelets: chroma only"), self->op, 11, &p,
+  dt_gui_presets_add_generic(_("wavelets: chroma only"), self->op, 12, &p,
                              sizeof(p), TRUE, DEVELOP_BLEND_CS_RGB_SCENE);
 }
 
@@ -2821,6 +2822,20 @@ void init(dt_iop_module_t *self)
   }
 }
 
+static int _get_iso_highlight_preservation_shift(dt_image_t *img)
+{
+  const float hilight_pres = img->exif_highlight_preservation;
+  // Only compensate whole EV steps, as non-whole steps are (based on
+  // experience and discussion in #19624) handled by different means in the
+  // camera.
+  const int shift = floorf(hilight_pres);
+  if(shift <= 0)
+  {
+    return 0;
+  }
+  return shift;
+}
+
 /** this will be called to init new defaults if a new image is loaded
  * from film strip mode. */
 void reload_defaults(dt_iop_module_t *self)
@@ -2841,7 +2856,9 @@ void reload_defaults(dt_iop_module_t *self)
   d->fix_anscombe_and_nlmeans_norm = TRUE;
   d->use_new_vst = TRUE;
   d->wavelet_color_mode = MODE_Y0U0V0;
-  d->compensate_hilite_pres = TRUE;
+
+  const int iso_shift = _get_iso_highlight_preservation_shift(&self->dev->image_storage);
+  d->compensate_hilite_pres = iso_shift > 0;
 
   GList *profiles = dt_noiseprofile_get_matching(&self->dev->image_storage);
   char name[512];
@@ -2982,19 +2999,8 @@ static dt_noiseprofile_t dt_iop_denoiseprofile_get_auto_profile(dt_iop_module_t 
   int shift = 0;
   if(compensate_hilite_pres)
   {
-    const float hilight_pres = self->dev->image_storage.exif_highlight_preservation;
-    // Only compensate whole EV steps, as non-whole steps are (based on
-    // experience and discussion in #19624) handled by different means in the
-    // camera.
-    shift = floorf(hilight_pres);
-    if(shift >= 0)
-    {
-      iso >>= shift;
-    }
-    else
-    {
-      shift = 0;
-    }
+    shift = _get_iso_highlight_preservation_shift(&self->dev->image_storage);
+    iso >>= shift;
   }
   dt_noiseprofile_t *last = NULL;
   for(GList *iter = profiles; iter; iter = g_list_next(iter))
@@ -3288,6 +3294,10 @@ void gui_update(dt_iop_module_t *self)
                          !p->fix_anscombe_and_nlmeans_norm);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(g->use_new_vst), p->use_new_vst);
   gtk_widget_set_visible(g->use_new_vst, !p->use_new_vst);
+
+  const int iso_shift = _get_iso_highlight_preservation_shift(&self->dev->image_storage);
+  gtk_widget_set_visible(g->compensate_hilite_pres, iso_shift > 0);
+
   if((p->wavelet_color_mode == MODE_Y0U0V0) && (g->channel < DT_DENOISE_PROFILE_Y0))
   {
     g->channel = DT_DENOISE_PROFILE_Y0;
